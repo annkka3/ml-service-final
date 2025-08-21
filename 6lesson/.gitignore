@@ -27,12 +27,41 @@ __pycache__/
 .idea/
 .vscode/
 
-
+/ml-service-final.git/
 
 .venv/
 __pycache__/
 *.pyc
 .DS_Store
 .idea/
-/tests/
+.pytest_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dylib
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Tests / tools
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Envs / IDE
+.venv/
+.env
+.env.*
+.ipynb_checkpoints/
+.vscode/
+.idea/
+
+
 
