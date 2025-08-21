@@ -104,7 +104,7 @@ services:
     environment:
       PYTHONPATH: /workspace
 
-      # --- DB (обязательно) ---
+      # --- DB  ---
       DB_HOST: database
       DB_PORT: "5432"
       DB_USER: user

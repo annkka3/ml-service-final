@@ -1,38 +1,25 @@
-{# app/presentation/web/templates/history.html #}
 {% extends "base.html" %}
-
-{% block title %}История операций{% endblock %}
-
+{% block title %}История переводов — ML Translate{% endblock %}
 {% block content %}
-<h2>История операций</h2>
-
-{% if transactions and transactions|length > 0 %}
-  <table class="table">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Дата/время</th>
-        <th>Тип</th>
-        <th>Сумма</th>
-      </tr>
-    </thead>
-    <tbody>
-    {% for t in transactions %}
-      <tr>
-        <td>{{ loop.index }}</td>
-        <td>{{ t.timestamp or t.created_at }}</td>
-        <td>
-          {% set ttype = (t.type or '') | lower %}
-          {% if ttype in ['topup', 'пополнение'] %}Пополнение
-          {% elif ttype in ['debit', 'списание'] %}Списание
-          {% else %}{{ t.type }}{% endif %}
-        </td>
-        <td>{{ t.amount }}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-{% else %}
-  <p>Пока нет операций.</p>
-{% endif %}
+<h1>История переводов</h1>
+<div class="card">
+  {% if items and items|length %}
+    <table class="table">
+      <thead><tr><th>#</th><th>Время</th><th>Исходный</th><th>Результат</th><th>Стоимость</th></tr></thead>
+      <tbody>
+      {% for x in items %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ x.timestamp }}</td>
+          <td>{{ x.input_text }}</td>
+          <td>{{ x.output_text }}</td>
+          <td>{{ x.cost }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="muted">Пока пусто.</p>
+  {% endif %}
+</div>
 {% endblock %}

@@ -1,6 +1,8 @@
 {% extends "base.html" %}
+{% block title %}Кабинет — ML Translate{% endblock %}
+
 {% block content %}
-<h2>Кабинет</h2>
+<h1>Кабинет</h1>
 
 <section class="grid-2">
   <div class="card">
@@ -16,7 +18,7 @@
     <h3>Перевод</h3>
     <form method="post" action="/web/translate">
       <label>Текст
-        <textarea name="text" rows="4" required></textarea>
+        <textarea name="text" rows="5" required></textarea>
       </label>
       <label>Язык назначения
         <input name="target_lang" value="en" />
@@ -32,7 +34,7 @@
   </div>
 </section>
 
-<section class="card">
+<section class="card" style="margin-top:18px">
   <h3>История</h3>
   {% if history and history|length %}
     <table class="table">
@@ -49,12 +51,11 @@
       </tbody>
     </table>
   {% else %}
-    <p>Пока пусто.</p>
+    <p class="muted">Пока пусто.</p>
   {% endif %}
 </section>
 
-<!-- 👇 вставляем сюда новую карточку -->
-<section class="card">
+<section class="card" style="margin-top:18px">
   <h3>История операций</h3>
   {% if txns and txns|length > 0 %}
     <table class="table small">
@@ -66,8 +67,8 @@
           <td>{{ t.timestamp or t.created_at }}</td>
           <td>
             {% set ttype = (t.type or '') | lower %}
-            {% if ttype in ['topup', 'пополнение'] %}Пополнение
-            {% elif ttype in ['debit', 'списание'] %}Списание
+            {% if ttype in ['topup', 'пополнение'] %}<span class="badge success">Пополнение</span>
+            {% elif ttype in ['debit', 'списание'] %}<span class="badge warn">Списание</span>
             {% else %}{{ t.type }}{% endif %}
           </td>
           <td>{{ t.amount }}</td>
@@ -75,13 +76,11 @@
       {% endfor %}
       </tbody>
     </table>
-    <p><a href="/web/transactions">Смотреть все →</a></p>
+    <p style="margin-top:10px"><a class="btn" href="/web/transactions">Смотреть все →</a></p>
   {% else %}
-    <p>Нет операций.</p>
+    <p class="muted">Нет операций.</p>
   {% endif %}
 </section>
-<!-- ☝️ конец вставки -->
 
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if error %}<p class="badge danger" style="margin-top:12px">{{ error }}</p>{% endif %}
 {% endblock %}
-

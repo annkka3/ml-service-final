@@ -1,5 +1,6 @@
+## app/api/routers/home.py
 from typing import Dict
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 router = APIRouter(tags=["Home"])
 
@@ -9,7 +10,4 @@ async def index() -> Dict[str, str]:
 
 @router.get("/health", response_model=Dict[str, str])
 async def health() -> Dict[str, str]:
-    try:
-        return {"status": "healthy"}
-    except Exception:
-        raise HTTPException(status_code=503, detail="Service unavailable")
+    return {"status": "healthy"}

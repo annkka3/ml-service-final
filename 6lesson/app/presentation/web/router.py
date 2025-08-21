@@ -1,169 +1,85 @@
-from typing import Optional
-import os
-import httpx
-from fastapi import APIRouter, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+# app/presentation/web/router.py
+from __future__ import annotations
+
+from datetime import datetime
 from pathlib import Path
 
-# Папка с шаблонами
+from fastapi import APIRouter, Depends, Request, status
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.infrastructure.db.database import get_db
+from app.infrastructure.db.models.user import User
+from app.infrastructure.db.models.translation import Translation
+from app.infrastructure.db.models.transaction import Transaction
+
+router = APIRouter(prefix="/web", tags=["Web"])
+
+# === Templates ===
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))   # создаём СНАЧАЛА
+# авто-перезагрузка шаблонов в dev
+templates.env.auto_reload = True
+# глобалки для всех шаблонов (кеш-бастинг статики и т.п.)
+templates.env.globals.update(
+    static_version="light-2",              # меняй значение, если нужно принудительно сбросить кеш
+    now=datetime.utcnow().year,            # год в футере, если используешь
+)
 
-router = APIRouter(prefix="/web", tags=["web"])
+@router.get("/", include_in_schema=False)
+async def web_root():
+    # 307, чтобы сохранять метод при редиректе, если что
+    return RedirectResponse(url="/web/dashboard", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
-# Базовый URL JSON-API (если роуты в том же приложении — localhost:8080)
-API_BASE = os.getenv("API_BASE", "http://127.0.0.1:8080")
 
-async def _get_token_from_cookie(request: Request) -> Optional[str]:
-    return request.cookies.get("access_token")
-
-@router.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    # Если есть токен — в кабинет, иначе на логин
-    token = _get_token_from_cookie(request)
-    if token:
-        return RedirectResponse(url="/web/dashboard", status_code=302)
-    return RedirectResponse(url="/web/login", status_code=302)
-
-# ---------- Аутентификация ----------
-@router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
-
-@router.post("/login")
-async def login_submit(request: Request, email: str = Form(...), password: str = Form(...)):
-    async with httpx.AsyncClient(base_url=API_BASE, timeout=10.0) as client:
-        resp = await client.post("/auth/login", json={"email": email, "password": password})
-    if resp.status_code != 200:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Неверные данные"}, status_code=400)
-    data = resp.json()
-    token = data.get("access_token")
-    if not token:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Не получен токен"}, status_code=400)
-
-    r = RedirectResponse(url="/web/dashboard", status_code=302)
-    r.set_cookie("access_token", token, httponly=True, secure=False)  # secure=True в проде на HTTPS
-    return r
-
-@router.get("/register", response_class=HTMLResponse)
-async def register_page(request: Request):
-    return templates.TemplateResponse("register.html", {"request": request, "error": None})
-
-@router.post("/register")
-async def register_submit(request: Request, email: str = Form(...), password: str = Form(...)):
-    async with httpx.AsyncClient(base_url=API_BASE, timeout=10.0) as client:
-        resp = await client.post("/auth/register", json={"email": email, "password": password})
-    if resp.status_code != 201 and resp.status_code != 200:
-        return templates.TemplateResponse("register.html", {"request": request, "error": "Регистрация не удалась"}, status_code=400)
-    return await login_submit(request, email=email, password=password)
-
-@router.get("/logout")
-async def logout():
-    r = RedirectResponse(url="/web/login", status_code=302)
-    r.delete_cookie("access_token")
-    return r
-
-# ---------- Кабинет / перевод / история / кошелёк ----------
 @router.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    token = _get_token_from_cookie(request)
-    if not token:
-        return RedirectResponse(url="/web/login", status_code=302)
+async def dashboard(request: Request, db: AsyncSession = Depends(get_db)) -> HTMLResponse:
+    # Простейшие метрики
+    users_count = await db.scalar(select(func.count(User.id)))
+    tr_count = await db.scalar(select(func.count(Translation.id)))
+    tx_count = await db.scalar(select(func.count(Transaction.id)))
 
-    headers = {"Authorization": f"Bearer {token}"}
-    async with httpx.AsyncClient(base_url=API_BASE, timeout=10.0, headers=headers) as client:
-        balance_resp = await client.get("/wallet/balance")
-        hist_resp = await client.get("/history")
-        txns_resp = await client.get("/history/transactions")
-
-    balance = balance_resp.json().get("balance") if balance_resp.status_code == 200 else "—"
-    history = hist_resp.json() if hist_resp.status_code == 200 else []
-    txns = txns_resp.json() if txns_resp.status_code == 200 else []
-
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request,
-         "balance": balance,
-         "history": history,
-         "txns": txns,
-         "header_balance": balance,
-         "error": None,
-         "result": None},
-    )
-
-@router.post("/translate", response_class=HTMLResponse)
-async def translate_submit(request: Request, text: str = Form(...), target_lang: str = Form("en")):
-    token = _get_token_from_cookie(request)
-    if not token:
-        return RedirectResponse(url="/web/login", status_code=302)
-
-    headers = {"Authorization": f"Bearer {token}"}
-    payload = {"text": text, "target_lang": target_lang}  # подстрой под свой /translate
-    async with httpx.AsyncClient(base_url=API_BASE, timeout=20.0, headers=headers) as client:
-        resp = await client.post("/translate", json=payload)
-
-        balance_resp = await client.get("/wallet/balance")
-        hist_resp = await client.get("/history")
-
-    result = resp.json().get("translated_text") if resp.status_code == 200 else None
-    balance = balance_resp.json().get("balance") if balance_resp.status_code == 200 else "—"
-    history = hist_resp.json() if hist_resp.status_code == 200 else []
-    error = None if result else "Ошибка перевода"
-
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "balance": balance, "history": history, "error": error, "result": result},
-    )
-
-@router.post("/topup", response_class=HTMLResponse)
-async def topup_submit(request: Request, amount: float = Form(...)):
-    token = _get_token_from_cookie(request)
-    if not token:
-        return RedirectResponse(url="/web/login", status_code=302)
-    headers = {"Authorization": f"Bearer {token}"}
-    async with httpx.AsyncClient(base_url=API_BASE, timeout=10.0, headers=headers) as client:
-        resp = await client.post("/wallet/topup", json={"amount": amount})
-
-        balance_resp = await client.get("/wallet/balance")
-        hist_resp = await client.get("/history")
-        txns_resp = await client.get("/history/transactions")
-
-    ok = resp.status_code in (200, 201)
-    balance = balance_resp.json().get("balance") if balance_resp.status_code == 200 else "—"
-    history = hist_resp.json() if hist_resp.status_code == 200 else []
-    txns = txns_resp.json() if txns_resp.status_code == 200 else []
-    error = None if ok else "Пополнение не удалось"
-
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request,
-         "balance": balance,
-         "history": history,
-         "txns": txns,
-         "header_balance": balance,
-         "error": error,
-         "result": None},
-    )
-
-@router.get("/transactions", response_class=HTMLResponse)
-async def page_transactions(request: Request):
-    token = await _get_token_from_cookie(request)
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-
-    async with httpx.AsyncClient(base_url=API_BASE, headers=headers, timeout=10) as client:
-        bal_resp = await client.get("/wallet/balance")
-        tx_resp = await client.get("/history/transactions")
-
-    transactions = tx_resp.json() if tx_resp.status_code == 200 else []
-    header_balance = bal_resp.json().get("balance") if bal_resp.status_code == 200 else None
-
-    return templates.TemplateResponse(
-        "transactions.html",
-        {
-            "request": request,
-            "transactions": transactions,
-            "title": "История операций",
-            "header_balance": header_balance,
-        },
-    )
+    # Пытаемся отдать шаблон; если нет шаблона или ошибка — отдаём фолбэк
+    try:
+        return templates.TemplateResponse(
+            "dashboard.html",
+            {
+                "request": request,
+                "users_count": users_count or 0,
+                "translations_count": tr_count or 0,
+                "transactions_count": tx_count or 0,
+            },
+        )
+    except Exception as e:
+        # Фолбэк без падения 500 — сразу видно и цифры, и причину
+        return HTMLResponse(
+            f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Dashboard</title>
+<link rel="stylesheet" href="/static/styles.css"/>
+<style>
+body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 920px; margin: 40px auto; padding: 0 16px; }}
+.card {{ border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; margin-bottom: 16px; }}
+h1 {{ font-size: 1.5rem; margin: 0 0 12px; }}
+.kpi {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }}
+.kpi .card h2 {{ font-size: 0.9rem; margin: 0 0 4px; color: #6b7280; }}
+.kpi .card .v {{ font-size: 1.6rem; font-weight: 700; }}
+.err {{ color: #b91c1c; background: #fee2e2; border: 1px solid #fecaca; padding: 12px; border-radius: 8px; }}
+</style>
+</head>
+<body>
+  <h1>Dashboard</h1>
+  <div class="kpi">
+    <div class="card"><h2>Users</h2><div class="v">{users_count or 0}</div></div>
+    <div class="card"><h2>Translations</h2><div class="v">{tr_count or 0}</div></div>
+    <div class="card"><h2>Transactions</h2><div class="v">{tx_count or 0}</div></div>
+  </div>
+  <div class="err"><strong>Template fallback</strong>: {e!s}</div>
+</body>
+</html>""",
+            status_code=200,
+        )

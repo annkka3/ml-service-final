@@ -5,3 +5,13 @@ dist/
 build/
 data/
 .env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.env
+*.db
+.pytest_cache/
+.vscode/
+.DS_Store
